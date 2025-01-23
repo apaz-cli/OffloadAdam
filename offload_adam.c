@@ -41,14 +41,14 @@ void adam_step(AdamOptimizer* optimizer, float* params, float* gradients) {
     
     for(int i = 0; i < optimizer->param_count; i++) {
         int idx = i * 2;
-        int m_ = optimizer->mv[idx];     // m_t-1
-        int v_ = optimizer->mv[idx + 1]; // v_t-1
+        float m_ = optimizer->mv[idx];     // m_t-1
+        float v_ = optimizer->mv[idx + 1]; // v_t-1
 
         // Calculate m_t
-        int m = optimizer->mv[idx] = (optimizer->beta1 * m_) + (1.0f - optimizer->beta1) * gradients[i];
+        float m = optimizer->mv[idx] = (optimizer->beta1 * m_) + (1.0f - optimizer->beta1) * gradients[i];
         
         // Calculate v_t
-        int v = optimizer->mv[idx + 1] = (optimizer->beta2 * v_) + (1.0f - optimizer->beta2) * gradients[i] * gradients[i];
+        float v = optimizer->mv[idx + 1] = (optimizer->beta2 * v_) + (1.0f - optimizer->beta2) * gradients[i] * gradients[i];
 
         // Calculate parameter update
         float m_hat = m / (1.0f - beta1);
@@ -61,73 +61,7 @@ void adam_step(AdamOptimizer* optimizer, float* params, float* gradients) {
 #include <immintrin.h>
 
 void adam_step_avx512(AdamOptimizer* optimizer, float* params, float* gradients) {
-    optimizer->t += 1;
-    const __m512 beta1_t = _mm512_set1_ps(powf(optimizer->beta1, optimizer->t));
-    const __m512 beta2_t = _mm512_set1_ps(powf(optimizer->beta2, optimizer->t));
-    const __m512 beta1 = _mm512_set1_ps(optimizer->beta1);
-    const __m512 beta2 = _mm512_set1_ps(optimizer->beta2);
-    const __m512 one_minus_beta1 = _mm512_set1_ps(1.0f - optimizer->beta1);
-    const __m512 one_minus_beta2 = _mm512_set1_ps(1.0f - optimizer->beta2);
-    const __m512 lr = _mm512_set1_ps(optimizer->learning_rate);
-    const __m512 eps = _mm512_set1_ps(optimizer->epsilon);
-    
-    // Process 16 parameters at a time
-    int vec_size = optimizer->param_count / 16;
-    for(int i = 0; i < vec_size; i++) {
-        int base_idx = i * 16;
-        
-        // Load 16 parameters and gradients
-        __m512 grad = _mm512_loadu_ps(&gradients[base_idx]);
-        __m512 param = _mm512_loadu_ps(&params[base_idx]);
-        
-        // Load m and v vectors
-        __m512 m = _mm512_loadu_ps(&optimizer->mv[base_idx * 2]);
-        __m512 v = _mm512_loadu_ps(&optimizer->mv[base_idx * 2 + 16]);
-        
-        // Update biased first moment estimate
-        m = _mm512_add_ps(
-            _mm512_mul_ps(beta1, m),
-            _mm512_mul_ps(one_minus_beta1, grad)
-        );
-        
-        // Update biased second raw moment estimate
-        v = _mm512_add_ps(
-            _mm512_mul_ps(beta2, v),
-            _mm512_mul_ps(one_minus_beta2, _mm512_mul_ps(grad, grad))
-        );
-        
-        // Compute bias-corrected moment estimates
-        __m512 m_hat = _mm512_div_ps(m, _mm512_sub_ps(_mm512_set1_ps(1.0f), beta1_t));
-        __m512 v_hat = _mm512_div_ps(v, _mm512_sub_ps(_mm512_set1_ps(1.0f), beta2_t));
-        
-        // Update parameters
-        param = _mm512_sub_ps(
-            param,
-            _mm512_div_ps(
-                _mm512_mul_ps(lr, m_hat),
-                _mm512_add_ps(_mm512_sqrt_ps(v_hat), eps)
-            )
-        );
-        
-        // Store results
-        _mm512_storeu_ps(&params[base_idx], param);
-        _mm512_storeu_ps(&optimizer->mv[base_idx * 2], m);
-        _mm512_storeu_ps(&optimizer->mv[base_idx * 2 + 16], v);
-    }
-    
-    // Handle remaining parameters
-    for(int i = vec_size * 16; i < optimizer->param_count; i++) {
-        int idx = i * 2;
-        float m_ = optimizer->mv[idx];
-        float v_ = optimizer->mv[idx + 1];
-        
-        float m = optimizer->mv[idx] = optimizer->beta1 * m_ + (1.0f - optimizer->beta1) * gradients[i];
-        float v = optimizer->mv[idx + 1] = optimizer->beta2 * v_ + (1.0f - optimizer->beta2) * gradients[i] * gradients[i];
-        
-        float m_hat = m / (1.0f - powf(optimizer->beta1, optimizer->t));
-        float v_hat = v / (1.0f - powf(optimizer->beta2, optimizer->t));
-        params[i] -= optimizer->learning_rate * m_hat / (sqrtf(v_hat) + optimizer->epsilon);
-    }
+
 }
 #endif
 
@@ -210,6 +144,11 @@ int main() {
     for (int i = 0; i < param_count; i++) {
         printf("result_scalar[%d] = %f\n", i, result_scalar[i]);
         printf("result_avx512[%d] = %f\n", i, result_avx512[i]);
+
+        if (result_scalar[i] != result_avx512[i]) {
+            printf("Mismatch at index %d\n", i);
+            return 1;
+        }
     }
 
 }
