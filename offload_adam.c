@@ -43,20 +43,39 @@ void adam_step(AdamOptimizer* optimizer, volatile float* params, volatile float*
     optimizer->t += 1;
     float beta1 = powf(optimizer->beta1, optimizer->t);
     float beta2 = powf(optimizer->beta2, optimizer->t);
+    float one_minus_beta1 = 1.0f - optimizer->beta1;
+    float one_minus_beta2 = 1.0f - optimizer->beta2;
+    float one_minus_beta1_t = 1.0f - beta1;
+    float one_minus_beta2_t = 1.0f - beta2;
     
-    for(int i = 0; i < optimizer->param_count; i++) {
-        float m_ = optimizer->m[i];  // m_t-1
-        float v_ = optimizer->v[i];  // v_t-1
+    // Process 16 elements at a time
+    uint64_t i;
+    for(i = 0; i + 15 < optimizer->param_count; i += 16) {
+        for(int j = 0; j < 16; j++) {
+            float grad = gradients[i + j];
+            float m_ = optimizer->m[i + j];
+            float v_ = optimizer->v[i + j];
 
-        // Calculate m_t
-        float m = optimizer->m[i] = (optimizer->beta1 * m_) + (1.0f - optimizer->beta1) * gradients[i];
-        
-        // Calculate v_t
-        float v = optimizer->v[i] = (optimizer->beta2 * v_) + (1.0f - optimizer->beta2) * gradients[i] * gradients[i];
+            float m = optimizer->m[i + j] = optimizer->beta1 * m_ + one_minus_beta1 * grad;
+            float v = optimizer->v[i + j] = optimizer->beta2 * v_ + one_minus_beta2 * grad * grad;
 
-        // Calculate parameter update
-        float m_hat = m / (1.0f - beta1);
-        float v_hat = v / (1.0f - beta2);
+            float m_hat = m / one_minus_beta1_t;
+            float v_hat = v / one_minus_beta2_t;
+            params[i + j] -= optimizer->learning_rate * m_hat / (sqrtf(v_hat) + optimizer->epsilon);
+        }
+    }
+    
+    // Handle remaining elements
+    for(; i < optimizer->param_count; i++) {
+        float grad = gradients[i];
+        float m_ = optimizer->m[i];
+        float v_ = optimizer->v[i];
+
+        float m = optimizer->m[i] = optimizer->beta1 * m_ + one_minus_beta1 * grad;
+        float v = optimizer->v[i] = optimizer->beta2 * v_ + one_minus_beta2 * grad * grad;
+
+        float m_hat = m / one_minus_beta1_t;
+        float v_hat = v / one_minus_beta2_t;
         params[i] -= optimizer->learning_rate * m_hat / (sqrtf(v_hat) + optimizer->epsilon);
     }
 }
