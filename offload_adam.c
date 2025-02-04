@@ -4,7 +4,8 @@
 #include <math.h>
 
 typedef struct {
-    float* mv;
+    float* m;
+    float* v;
     float beta1;
     float beta2;
     float learning_rate;
@@ -17,7 +18,8 @@ typedef struct {
 AdamOptimizer* adam_init(int param_count, float learning_rate, float beta1, float beta2, float epsilon) {
     AdamOptimizer* optimizer = (AdamOptimizer*)malloc(sizeof(AdamOptimizer));
     
-    optimizer->mv = (float*)calloc(param_count * 2, sizeof(float));
+    optimizer->m = (float*)calloc(param_count, sizeof(float));
+    optimizer->v = (float*)calloc(param_count, sizeof(float));
     optimizer->beta1 = beta1;
     optimizer->beta2 = beta2;
     optimizer->learning_rate = learning_rate;
@@ -30,7 +32,8 @@ AdamOptimizer* adam_init(int param_count, float learning_rate, float beta1, floa
 
 // Free the optimizer's memory
 void adam_free(AdamOptimizer* optimizer) {
-    free(optimizer->mv);
+    free(optimizer->m);
+    free(optimizer->v);
     free(optimizer);
 }
 
@@ -40,15 +43,14 @@ void adam_step(AdamOptimizer* optimizer, float* params, float* gradients) {
     float beta2 = powf(optimizer->beta2, optimizer->t);
     
     for(int i = 0; i < optimizer->param_count; i++) {
-        int idx = i * 2;
-        float m_ = optimizer->mv[idx];     // m_t-1
-        float v_ = optimizer->mv[idx + 1]; // v_t-1
+        float m_ = optimizer->m[i];  // m_t-1
+        float v_ = optimizer->v[i];  // v_t-1
 
         // Calculate m_t
-        float m = optimizer->mv[idx] = (optimizer->beta1 * m_) + (1.0f - optimizer->beta1) * gradients[i];
+        float m = optimizer->m[i] = (optimizer->beta1 * m_) + (1.0f - optimizer->beta1) * gradients[i];
         
         // Calculate v_t
-        float v = optimizer->mv[idx + 1] = (optimizer->beta2 * v_) + (1.0f - optimizer->beta2) * gradients[i] * gradients[i];
+        float v = optimizer->v[i] = (optimizer->beta2 * v_) + (1.0f - optimizer->beta2) * gradients[i] * gradients[i];
 
         // Calculate parameter update
         float m_hat = m / (1.0f - beta1);
