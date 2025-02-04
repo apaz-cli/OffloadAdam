@@ -9,6 +9,8 @@
 typedef struct {
     float* volatile m;
     float* volatile v;
+    void* m_base;  // Original allocated pointer for m
+    void* v_base;  // Original allocated pointer for v
     float beta1;
     float beta2;
     float learning_rate;
@@ -21,8 +23,13 @@ typedef struct {
 AdamOptimizer* adam_init(int param_count, float learning_rate, float beta1, float beta2, float epsilon) {
     AdamOptimizer* optimizer = (AdamOptimizer*)malloc(sizeof(AdamOptimizer));
     
-    optimizer->m = (float*)calloc(param_count, sizeof(float));
-    optimizer->v = (float*)calloc(param_count, sizeof(float));
+    size_t aligned_size = param_count * sizeof(float) + 63;
+    optimizer->m_base = calloc(1, aligned_size);
+    optimizer->v_base = calloc(1, aligned_size);
+    
+    // Align to 64 bytes
+    optimizer->m = (float*)(((uintptr_t)optimizer->m_base + 63) & ~63);
+    optimizer->v = (float*)(((uintptr_t)optimizer->v_base + 63) & ~63);
     optimizer->beta1 = beta1;
     optimizer->beta2 = beta2;
     optimizer->learning_rate = learning_rate;
@@ -35,8 +42,8 @@ AdamOptimizer* adam_init(int param_count, float learning_rate, float beta1, floa
 
 // Free the optimizer's memory
 void adam_free(AdamOptimizer* optimizer) {
-    free((void*)optimizer->m);
-    free((void*)optimizer->v);
+    free(optimizer->m_base);
+    free(optimizer->v_base);
     free(optimizer);
 }
 
