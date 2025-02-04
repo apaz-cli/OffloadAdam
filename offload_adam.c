@@ -73,8 +73,8 @@ void adam_step(AdamOptimizer* optimizer, float* volatile params, float* volatile
     for(i = 0; i + 15 < optimizer->param_count; i += 16) {
         // Load 16 elements
         __m512 grad_vec = _mm512_loadu_ps(&gradients[i]);
-        __m512 m_prev_vec = _mm512_loadu_ps(&optimizer->m[i]);
-        __m512 v_prev_vec = _mm512_loadu_ps(&optimizer->v[i]);
+        __m512 m_prev_vec = _mm512_load_ps(&optimizer->m[i]);
+        __m512 v_prev_vec = _mm512_load_ps(&optimizer->v[i]);
         __m512 param_vec = _mm512_loadu_ps(&params[i]);
 
         // Calculate m = beta1 * m + (1-beta1) * grad
@@ -87,8 +87,8 @@ void adam_step(AdamOptimizer* optimizer, float* volatile params, float* volatile
                                       _mm512_mul_ps(one_minus_beta2_vec, grad_sq));
 
         // Store m and v
-        _mm512_storeu_ps(&optimizer->m[i], m_vec);
-        _mm512_storeu_ps(&optimizer->v[i], v_vec);
+        _mm512_store_ps(&optimizer->m[i], m_vec);
+        _mm512_store_ps(&optimizer->v[i], v_vec);
 
         // Calculate m_hat = m / (1-beta1^t)
         __m512 m_hat = _mm512_div_ps(m_vec, one_minus_beta1_t_vec);
