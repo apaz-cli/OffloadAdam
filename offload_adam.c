@@ -23,13 +23,15 @@ typedef struct {
 AdamOptimizer* adam_init(int param_count, float learning_rate, float beta1, float beta2, float epsilon) {
     AdamOptimizer* optimizer = (AdamOptimizer*)malloc(sizeof(AdamOptimizer));
     
+    // Calloc and align to 64 bytes (The size of __m512).
+    // This allows us to use aligned instructions.
+    // Although parameters may not be aligned.
     size_t aligned_size = param_count * sizeof(float) + 63;
     optimizer->m_base = calloc(1, aligned_size);
     optimizer->v_base = calloc(1, aligned_size);
-    
-    // Align to 64 bytes
     optimizer->m = (float*)(((uintptr_t)optimizer->m_base + 63) & ~63);
     optimizer->v = (float*)(((uintptr_t)optimizer->v_base + 63) & ~63);
+
     optimizer->beta1 = beta1;
     optimizer->beta2 = beta2;
     optimizer->learning_rate = learning_rate;
