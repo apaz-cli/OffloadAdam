@@ -7,8 +7,8 @@
 // If we need to change the grad or optimizer state dtype, we shall rewrite.
 
 typedef struct {
-    volatile float* m;
-    volatile float* v;
+    float* volatile m;
+    float* volatile v;
     float beta1;
     float beta2;
     float learning_rate;
@@ -40,7 +40,8 @@ void adam_free(AdamOptimizer* optimizer) {
     free(optimizer);
 }
 
-void adam_step(AdamOptimizer* optimizer, volatile float* params, volatile float* gradients) {
+
+void adam_step(AdamOptimizer* optimizer, float* volatile params, float* volatile gradients) {
     optimizer->t += 1;
     float beta1 = powf(optimizer->beta1, optimizer->t);
     float beta2 = powf(optimizer->beta2, optimizer->t);
