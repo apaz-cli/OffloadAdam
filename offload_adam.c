@@ -57,13 +57,6 @@ void adam_step(AdamOptimizer* optimizer, float* params, float* gradients) {
     }
 }
 
-#if __has_include(<immintrin.h>) && defined(__AVX512F__)
-#include <immintrin.h>
-
-void adam_step_avx512(AdamOptimizer* optimizer, float* params, float* gradients) {
-
-}
-#endif
 
 int param_count = 41;
 
@@ -104,51 +97,8 @@ float* test_impl() {
     return params;
 }
 
-float* test_impl_512() {
-
-    static float params[] = {0};
-    float gradients[] = {0};
-
-    for (int i = 0; i < param_count; i++) {
-        params[i] = (float)(i + 1);
-        gradients[i] = (float)(i + 1) * 0.1f * (i % 2 == 0 ? 1 : -1);
-    }
-
-    float learning_rate = 0.01f;
-    float beta1 = 0.9f;
-    float beta2 = 0.999f;
-    float epsilon = 1e-8f;
-    AdamOptimizer* optimizer = adam_init(param_count, learning_rate, beta1, beta2, epsilon);
-
-    // Perform one optimization step
-    printf("Before optimization:\n");
-    for(int i = 0; i < param_count; i++) {
-        printf("param[%d] = %f\n", i, params[i]);
-    }
-    
-    for (int i = 0; i < 3; i++) {
-        adam_step_avx512(optimizer, params, gradients);
-    }
-    
-    // Free memory
-    adam_free(optimizer);
-    
-    return params;
-}
 // Example usage
 int main() {
-
-    float* result_scalar = test_impl();
-    float* result_avx512 = test_impl_512();
-
-    for (int i = 0; i < param_count; i++) {
-        printf("result_scalar[%d] = %f\n", i, result_scalar[i]);
-        printf("result_avx512[%d] = %f\n", i, result_avx512[i]);
-
-        if (result_scalar[i] != result_avx512[i]) {
-            printf("Mismatch at index %d\n", i);
-            return 1;
-        }
-    }
-
+    test_impl();
+    return 0;
 }
