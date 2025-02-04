@@ -3,9 +3,11 @@
 #include <stdlib.h>
 #include <math.h>
 
+// If we need to change the grad or optimizer state dtype, we shall rewrite.
+
 typedef struct {
-    float* m;
-    float* v;
+    volatile float* m;
+    volatile float* v;
     float beta1;
     float beta2;
     float learning_rate;
@@ -32,12 +34,12 @@ AdamOptimizer* adam_init(int param_count, float learning_rate, float beta1, floa
 
 // Free the optimizer's memory
 void adam_free(AdamOptimizer* optimizer) {
-    free(optimizer->m);
-    free(optimizer->v);
+    free((void*)optimizer->m);
+    free((void*)optimizer->v);
     free(optimizer);
 }
 
-void adam_step(AdamOptimizer* optimizer, float* params, float* gradients) {
+void adam_step(AdamOptimizer* optimizer, volatile float* params, volatile float* gradients) {
     optimizer->t += 1;
     float beta1 = powf(optimizer->beta1, optimizer->t);
     float beta2 = powf(optimizer->beta2, optimizer->t);
