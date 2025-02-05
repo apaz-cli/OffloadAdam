@@ -1,16 +1,10 @@
 #include "offload_adam.h"
 
-// gcc benchmark_vs_naive.c -lm -O3 -march=native -fno-math-errno -mavx512f -fopt-info-vec -fsanitize=address -g -fsanitize=undefined
-
-#if !defined(__AVX512F__)
-#error "AVX-512 is required for this benchmark."
-#endif
-
+// gcc benchmark_vs_naive.c -lm -O3 -march=native -fno-math-errno -mavx512f -mavx2 -fopt-info-vec -fsanitize=address -g -fsanitize=undefined
 
 #define PARAM_COUNT 10000000
 
 double test_impl(void step_fn(AdamOptimizer* optimizer, float* volatile params, float* volatile gradients), float** out_params) {
-
     float* params = (float*)malloc(PARAM_COUNT * sizeof(float));
     float* gradients = (float*)malloc(PARAM_COUNT * sizeof(float));
     if (params == NULL || gradients == NULL) {
@@ -48,25 +42,38 @@ double test_impl(void step_fn(AdamOptimizer* optimizer, float* volatile params, 
     return time_taken;
 }
 
-int main(void) {
-    float *params1, *params2;
-    double time1 = test_impl(adam_step_naive, &params1);
-    double time2 = test_impl(adam_step_avx512, &params2);
-
-    // Verify results match
+void verify_results(float* baseline, float* test, const char* impl_name) {
     for (int i = 0; i < PARAM_COUNT; i++) {
-        if (fabsf(params1[i] - params2[i]) > 1e-5f) {
-            printf("Mismatch at index %d: %f != %f\n", i, params1[i], params2[i]);
-            return 1;
+        if (fabsf(baseline[i] - test[i]) > 1e-5f) {
+            printf("Mismatch at index %d between naive and %s: %f != %f\n", 
+                   i, impl_name, baseline[i], test[i]);
+            exit(1);
         }
     }
+    printf("Results match between naive and %s!\n", impl_name);
+}
 
-    printf("Results match!\n");
-    printf("Naive implementation: %.3f seconds\n", time1);
-    printf("AVX-512 implementation: %.3f seconds\n", time2);
-    printf("Speedup: %.2fx\n", time1/time2);
+int main(void) {
+    float *params_naive, *params_avx2, *params_avx512;
+    double time_naive = test_impl(adam_step_naive, &params_naive);
+    printf("Naive implementation: %.3f seconds\n", time_naive);
 
-    free(params1);
-    free(params2);
+#if defined(__AVX2__)
+    double time_avx2 = test_impl(adam_step_avx256, &params_avx2);
+    verify_results(params_naive, params_avx2, "AVX2");
+    printf("AVX2 implementation: %.3f seconds (%.2fx speedup)\n", 
+           time_avx2, time_naive/time_avx2);
+    free(params_avx2);
+#endif
+
+#if defined(__AVX512F__)
+    double time_avx512 = test_impl(adam_step_avx512, &params_avx512);
+    verify_results(params_naive, params_avx512, "AVX-512");
+    printf("AVX-512 implementation: %.3f seconds (%.2fx speedup)\n", 
+           time_avx512, time_naive/time_avx512);
+    free(params_avx512);
+#endif
+
+    free(params_naive);
     return 0;
 }
