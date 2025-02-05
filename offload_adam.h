@@ -2,7 +2,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
-#include <immintrin.h>
 #include <time.h>
 
 // If we need to change the grad or optimizer state dtype, we shall rewrite.
@@ -14,20 +13,20 @@ typedef struct {
     void* v_base;      // Original allocated pointer for v
     float beta1;
     float beta2;
-    float learning_rate;
-    float epsilon;
+    float lr;
+    float eps;
     uint64_t param_count;
     uint64_t t;
 } AdamOptimizer;
 
 // Initialize the Adam optimizer
-static AdamOptimizer* adam_init(int param_count, float learning_rate, float beta1, float beta2, float epsilon) {
+static AdamOptimizer* adam_init(int param_count, float learning_rate, float beta1, float beta2, float eps) {
     AdamOptimizer* optimizer = (AdamOptimizer*)malloc(sizeof(AdamOptimizer));
 
     optimizer->beta1 = beta1;
     optimizer->beta2 = beta2;
-    optimizer->learning_rate = learning_rate;
-    optimizer->epsilon = epsilon;
+    optimizer->lr = learning_rate;
+    optimizer->eps = eps;
     optimizer->param_count = param_count;
     optimizer->t = 0;
 
@@ -73,10 +72,12 @@ static void adam_step_naive(AdamOptimizer* optimizer, float* volatile params, fl
 
         float m_hat = m / one_minus_beta1_t;
         float v_hat = v / one_minus_beta2_t;
-        params[i] -= optimizer->learning_rate * m_hat / (sqrtf(v_hat) + optimizer->epsilon);
+        params[i] -= optimizer->lr * m_hat / (sqrtf(v_hat) + optimizer->eps);
     }
 }
 
+#if defined(__AVX512F__)
+#include <immintrin.h>
 static void adam_step_avx512(AdamOptimizer* optimizer, float* volatile params, float* volatile gradients) {
     optimizer->t += 1;
     float beta1 = powf(optimizer->beta1, optimizer->t);
@@ -94,8 +95,8 @@ static void adam_step_avx512(AdamOptimizer* optimizer, float* volatile params, f
     __m512 one_minus_beta2_vec = _mm512_set1_ps(one_minus_beta2);
     __m512 one_minus_beta1_t_vec = _mm512_set1_ps(one_minus_beta1_t);
     __m512 one_minus_beta2_t_vec = _mm512_set1_ps(one_minus_beta2_t);
-    __m512 lr_vec = _mm512_set1_ps(optimizer->learning_rate);
-    __m512 eps_vec = _mm512_set1_ps(optimizer->epsilon);
+    __m512 lr_vec = _mm512_set1_ps(optimizer->lr);
+    __m512 eps_vec = _mm512_set1_ps(optimizer->eps);
 
     for(i = 0; i + 15 < optimizer->param_count; i += 16) {
         // Load 16 elements
@@ -123,7 +124,7 @@ static void adam_step_avx512(AdamOptimizer* optimizer, float* volatile params, f
         // Calculate v_hat = v / (1-beta2^t)
         __m512 v_hat = _mm512_div_ps(v_vec, one_minus_beta2_t_vec);
 
-        // Calculate sqrt(v_hat) + epsilon
+        // Calculate sqrt(v_hat) + eps
         __m512 denom = _mm512_add_ps(_mm512_sqrt_ps(v_hat), eps_vec);
 
         // Calculate update = lr * m_hat / (sqrt(v_hat) + eps)
@@ -148,8 +149,8 @@ static void adam_step_avx512(AdamOptimizer* optimizer, float* volatile params, f
 
         float m_hat = m / one_minus_beta1_t;
         float v_hat = v / one_minus_beta2_t;
-        params[i] -= optimizer->learning_rate * m_hat / (sqrtf(v_hat) + optimizer->epsilon);
+        params[i] -= optimizer->lr * m_hat / (sqrtf(v_hat) + optimizer->eps);
     }
 }
-
+#endif
 
