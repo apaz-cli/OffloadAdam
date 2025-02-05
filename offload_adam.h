@@ -78,7 +78,7 @@ static void adam_step_naive(AdamOptimizer* optimizer, float* volatile params, fl
 
 #if defined(__AVX2__)
 #include <immintrin.h>
-static void adam_step_avx2(AdamOptimizer* optimizer, float* volatile params, float* volatile gradients) {
+static void adam_step_avx256(AdamOptimizer* optimizer, float* volatile params, float* volatile gradients) {
     optimizer->t += 1;
     float beta1 = powf(optimizer->beta1, optimizer->t);
     float beta2 = powf(optimizer->beta2, optimizer->t);

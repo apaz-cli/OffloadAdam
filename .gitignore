@@ -1,6 +1,7 @@
 .aider*
 .env
 .venv/**
+.vscode/**
 
 build/**
 dist/**

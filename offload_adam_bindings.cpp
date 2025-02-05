@@ -36,17 +36,6 @@ torch::Tensor step_naive(
     return params;
 }
 
-#if defined(__AVX2__)
-torch::Tensor step_avx2(
-    AdamOptimizer* optimizer,
-    torch::Tensor& params,
-    torch::Tensor& grads
-) {
-    STEP_CHECKS()
-    adam_step_avx2(optimizer, params.data_ptr<float>(),  grads.data_ptr<float>());
-    return params;
-}
-#endif
 
 #if defined(__AVX512F__)
 torch::Tensor step_avx512(
@@ -60,6 +49,18 @@ torch::Tensor step_avx512(
 }
 #endif
 
+#if defined(__AVX2__)
+torch::Tensor step_avx256(
+    AdamOptimizer* optimizer,
+    torch::Tensor& params,
+    torch::Tensor& grads
+) {
+    STEP_CHECKS()
+    adam_step_avx256(optimizer, params.data_ptr<float>(),  grads.data_ptr<float>());
+    return params;
+}
+#endif
+
 torch::Tensor step(
     AdamOptimizer* optimizer,
     torch::Tensor& params,
@@ -68,15 +69,14 @@ torch::Tensor step(
 #if defined(__AVX512F__)
     return step_avx512(optimizer, params, grads);
 #elif defined(__AVX2__)
-    return step_avx2(optimizer, params, grads);
+    return step_avx256(optimizer, params, grads);
 #else
     return step_naive(optimizer, params, grads);
 #endif
     return params;
 }
 
-int get_simd_level(AdamOptimizer* optimizer) {
-    (void)optimizer;
+int get_simd_level(void) {
 #if defined(__AVX512F__)
     return 512;
 #elif defined(__AVX2__)
@@ -116,12 +116,18 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
           py::arg("params"),
           py::arg("grads"));
 #endif
+
+#if defined(__AVX2__)
+    m.def("step_avx256", &step_avx256, "AVX2 optimized Adam optimizer step",
+          py::arg("optimizer"),
+          py::arg("params"),
+          py::arg("grads"));
+#endif
     
-    m.def("step", &step, "AVX512 optimized Adam optimizer step if available, else naive.",
+    m.def("step", &step, "The most optimized Adam optimizer step available.",
           py::arg("optimizer"),
           py::arg("params"),
           py::arg("grads"));
 
-    m.def("simd_level", &get_simd_level, "Get SIMD level (0=none, 256=AVX2, 512=AVX512)",
-          py::arg("optimizer"));
+    m.def("simd_level", &get_simd_level, "Get SIMD level (0=Scalar, 256=AVX2, 512=AVX512)");
 }

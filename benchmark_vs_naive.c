@@ -1,6 +1,6 @@
 #include "offload_adam.h"
 
-// gcc benchmark_vs_naive.c -lm -O3 -march=native -fno-math-errno -mavx512f -mavx2 -fopt-info-vec -fsanitize=address -g -fsanitize=undefined
+// gcc benchmark_vs_naive.c -lm -O3 -march=native -fno-math-errno
 
 #define PARAM_COUNT 10000000
 
