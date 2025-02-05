@@ -7,10 +7,10 @@
 // If we need to change the grad or optimizer state dtype, we shall rewrite.
 
 typedef struct {
-    float* volatile m;
-    float* volatile v;
-    void* m_base;  // Original allocated pointer for m
-    void* v_base;  // Original allocated pointer for v
+    float* volatile m; // 64-byte aligned
+    float* volatile v; // 64-byte aligned
+    void* m_base;      // Original allocated pointer for m
+    void* v_base;      // Original allocated pointer for v
     float beta1;
     float beta2;
     float learning_rate;
@@ -22,15 +22,6 @@ typedef struct {
 // Initialize the Adam optimizer
 AdamOptimizer* adam_init(int param_count, float learning_rate, float beta1, float beta2, float epsilon) {
     AdamOptimizer* optimizer = (AdamOptimizer*)malloc(sizeof(AdamOptimizer));
-    
-    // Calloc and align to 64 bytes (The size of __m512).
-    // This allows us to use aligned instructions.
-    // Although parameters may not be aligned.
-    size_t aligned_size = param_count * sizeof(float) + 63;
-    optimizer->m_base = calloc(1, aligned_size);
-    optimizer->v_base = calloc(1, aligned_size);
-    optimizer->m = (float*)(((uintptr_t)optimizer->m_base + 63) & ~63);
-    optimizer->v = (float*)(((uintptr_t)optimizer->v_base + 63) & ~63);
 
     optimizer->beta1 = beta1;
     optimizer->beta2 = beta2;
@@ -38,6 +29,19 @@ AdamOptimizer* adam_init(int param_count, float learning_rate, float beta1, floa
     optimizer->epsilon = epsilon;
     optimizer->param_count = param_count;
     optimizer->t = 0;
+
+    // Initialize the optimizer state.    
+    // Calloc and align to 64 bytes (The size of __m512).
+    // This allows us to use aligned instructions, although parameters may not be aligned.
+    size_t aligned_size = param_count * sizeof(float) + 63;
+    optimizer->m_base = calloc(1, aligned_size);
+    optimizer->v_base = calloc(1, aligned_size);
+    if (optimizer->m_base == NULL || optimizer->v_base == NULL) {
+        fprintf(stderr, "Failed to allocate %zu bytes of memory for optimizer state.\n", (size_t)2 * aligned_size);
+        exit(1);
+    }
+    optimizer->m = (float*)(((uintptr_t)optimizer->m_base + 63) & ~63);
+    optimizer->v = (float*)(((uintptr_t)optimizer->v_base + 63) & ~63);
     
     return optimizer;
 }
@@ -49,8 +53,30 @@ void adam_free(AdamOptimizer* optimizer) {
     free(optimizer);
 }
 
+void adam_step_naive(AdamOptimizer* optimizer, float* volatile params, float* volatile gradients) {
+    optimizer->t += 1;
+    float beta1 = powf(optimizer->beta1, optimizer->t);
+    float beta2 = powf(optimizer->beta2, optimizer->t);
+    float one_minus_beta1 = 1.0f - optimizer->beta1;
+    float one_minus_beta2 = 1.0f - optimizer->beta2;
+    float one_minus_beta1_t = 1.0f - beta1;
+    float one_minus_beta2_t = 1.0f - beta2;
+    
+    for(uint64_t i = 0; i < optimizer->param_count; i++) {
+        float grad = gradients[i];
+        float m_ = optimizer->m[i];
+        float v_ = optimizer->v[i];
 
-void adam_step(AdamOptimizer* optimizer, float* volatile params, float* volatile gradients) {
+        float m = optimizer->m[i] = optimizer->beta1 * m_ + one_minus_beta1 * grad;
+        float v = optimizer->v[i] = optimizer->beta2 * v_ + one_minus_beta2 * grad * grad;
+
+        float m_hat = m / one_minus_beta1_t;
+        float v_hat = v / one_minus_beta2_t;
+        params[i] -= optimizer->learning_rate * m_hat / (sqrtf(v_hat) + optimizer->epsilon);
+    }
+}
+
+void adam_step_avx512(AdamOptimizer* optimizer, float* volatile params, float* volatile gradients) {
     optimizer->t += 1;
     float beta1 = powf(optimizer->beta1, optimizer->t);
     float beta2 = powf(optimizer->beta2, optimizer->t);
@@ -73,9 +99,9 @@ void adam_step(AdamOptimizer* optimizer, float* volatile params, float* volatile
     for(i = 0; i + 15 < optimizer->param_count; i += 16) {
         // Load 16 elements
         __m512 grad_vec = _mm512_loadu_ps(&gradients[i]);
+        __m512 param_vec = _mm512_loadu_ps(&params[i]);
         __m512 m_prev_vec = _mm512_load_ps(&optimizer->m[i]);
         __m512 v_prev_vec = _mm512_load_ps(&optimizer->v[i]);
-        __m512 param_vec = _mm512_loadu_ps(&params[i]);
 
         // Calculate m = beta1 * m + (1-beta1) * grad
         __m512 m_vec = _mm512_fmadd_ps(beta1_vec, m_prev_vec,
@@ -126,14 +152,20 @@ void adam_step(AdamOptimizer* optimizer, float* volatile params, float* volatile
 }
 
 
-int param_count = 41;
+float* test_impl(void step_fn(AdamOptimizer* optimizer, float* volatile params, float* volatile gradients)) {
 
-float* test_impl() {
+    #define PARAM_COUNT 141
+    
+    // Malloc params
+    float* params = (float*)malloc(PARAM_COUNT * sizeof(float));
+    float* gradients = (float*)malloc(PARAM_COUNT * sizeof(float));
+    if (params == NULL || gradients == NULL) {
+        fprintf(stderr, "Failed to allocate %zu bytes of memory for params and gradients.\n", (size_t)PARAM_COUNT * 2 * sizeof(float));
+        exit(1);
+    }   
 
-    static float params[] = {0};
-    float gradients[] = {0};
-
-    for (int i = 0; i < param_count; i++) {
+    // Create some data
+    for (int i = 0; i < PARAM_COUNT; i++) {
         params[i] = (float)(i + 1);
         gradients[i] = (float)(i + 1) * 0.1f * (i % 2 == 0 ? 1 : -1);
     }
@@ -142,31 +174,33 @@ float* test_impl() {
     float beta1 = 0.9f;
     float beta2 = 0.999f;
     float epsilon = 1e-8f;
-    AdamOptimizer* optimizer = adam_init(param_count, learning_rate, beta1, beta2, epsilon);
-
-    // Perform one optimization step
-    printf("Before optimization:\n");
-    for(int i = 0; i < param_count; i++) {
-        printf("param[%d] = %f\n", i, params[i]);
-    }
+    AdamOptimizer* optimizer = adam_init(PARAM_COUNT, learning_rate, beta1, beta2, epsilon);
     
     for (int i = 0; i < 3; i++) {
-        adam_step(optimizer, params, gradients);
+        step_fn(optimizer, params, gradients);
     }
 
-    printf("\nAfter optimization:\n");
-    for(int i = 0; i < param_count; i++) {
-        printf("param[%d] = %f\n", i, params[i]);
-    }
-    
-    // Free memory
     adam_free(optimizer);
+    free(gradients);
     
     return params;
 }
 
 // Example usage
 int main() {
-    test_impl();
+    float* params1 = test_impl(adam_step_naive);
+    float* params2 = test_impl(adam_step_avx512);
+
+    for (int i = 0; i < PARAM_COUNT; i++) {
+        if (params1[i] != params2[i]) {
+            printf("Mismatch at index %d: %f != %f\n", i, params1[i], params2[i]);
+            return 1;
+        }
+    }
+
+    printf("Results match!\n");
+
+    free(params1);
+    free(params2);
     return 0;
 }
