@@ -3,6 +3,8 @@
 .venv/**
 
 build/**
+dist/**
 offload_adam.egg-info/**
 
+*.so
 a.out
