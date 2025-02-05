@@ -1,5 +1,7 @@
 #include "offload_adam.h"
 
+// gcc benchmark_vs_naive.c -lm -O3 -march=native -fno-math-errno -mavx512f -fopt-info-vec -fsanitize=address -g -fsanitize=undefined
+
 double test_impl(void step_fn(AdamOptimizer* optimizer, float* volatile params, float* volatile gradients), float** out_params) {
 
     #define PARAM_COUNT 10000000  // 10M parameters
