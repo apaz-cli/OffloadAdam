@@ -6,8 +6,8 @@ setup(
     ext_modules=[
         CppExtension(
             'offload_adam',
-            ['offload_adam_bindings.c'],
-            extra_compile_args=['-mavx512f', '-O3']
+            ['offload_adam_bindings.cpp'],
+            extra_compile_args=['-lm', '-O3', '-march=native', '-fno-math-errno']
         ),
     ],
     cmdclass={

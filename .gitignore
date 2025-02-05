@@ -2,4 +2,7 @@
 .env
 .venv/**
 
+build/**
+offload_adam.egg-info/**
+
 a.out
