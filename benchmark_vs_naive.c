@@ -2,11 +2,15 @@
 
 // gcc benchmark_vs_naive.c -lm -O3 -march=native -fno-math-errno -mavx512f -fopt-info-vec -fsanitize=address -g -fsanitize=undefined
 
+#if !defined(__AVX512F__)
+#error "AVX-512 is required for this benchmark."
+#endif
+
+
+#define PARAM_COUNT 10000000
+
 double test_impl(void step_fn(AdamOptimizer* optimizer, float* volatile params, float* volatile gradients), float** out_params) {
 
-    #define PARAM_COUNT 10000000  // 10M parameters
-    
-    // Malloc params
     float* params = (float*)malloc(PARAM_COUNT * sizeof(float));
     float* gradients = (float*)malloc(PARAM_COUNT * sizeof(float));
     if (params == NULL || gradients == NULL) {
