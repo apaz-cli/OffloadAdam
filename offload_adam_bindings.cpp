@@ -36,6 +36,18 @@ torch::Tensor step_naive(
     return params;
 }
 
+#if defined(__AVX2__)
+torch::Tensor step_avx2(
+    AdamOptimizer* optimizer,
+    torch::Tensor& params,
+    torch::Tensor& grads
+) {
+    STEP_CHECKS()
+    adam_step_avx2(optimizer, params.data_ptr<float>(),  grads.data_ptr<float>());
+    return params;
+}
+#endif
+
 #if defined(__AVX512F__)
 torch::Tensor step_avx512(
     AdamOptimizer* optimizer,
@@ -55,16 +67,20 @@ torch::Tensor step(
 ) {
 #if defined(__AVX512F__)
     return step_avx512(optimizer, params, grads);
+#elif defined(__AVX2__)
+    return step_avx2(optimizer, params, grads);
 #else
     return step_naive(optimizer, params, grads);
 #endif
     return params;
 }
 
-bool using_avx512(AdamOptimizer* optimizer) {
+int get_simd_level(AdamOptimizer* optimizer) {
     (void)optimizer;
 #if defined(__AVX512F__)
-    return 1;
+    return 512;
+#elif defined(__AVX2__)
+    return 256;
 #else
     return 0;
 #endif
@@ -106,6 +122,6 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
           py::arg("params"),
           py::arg("grads"));
 
-    m.def("avx512", &using_avx512, "Check if AVX512 is available",
+    m.def("simd_level", &get_simd_level, "Get SIMD level (0=none, 256=AVX2, 512=AVX512)",
           py::arg("optimizer"));
 }
