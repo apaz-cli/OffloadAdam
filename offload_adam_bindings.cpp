@@ -52,11 +52,11 @@ torch::Tensor step_avx512(
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     py::class_<AdamOptimizer>(m, "AdamOptimizer", py::module_local())
         .def_readonly("param_count", &AdamOptimizer::param_count)
-        .def_readonly("learning_rate", &AdamOptimizer::learning_rate)
-        .def_readonly("beta1", &AdamOptimizer::beta1)
-        .def_readonly("beta2", &AdamOptimizer::beta2)
-        .def_readonly("epsilon", &AdamOptimizer::epsilon)
-        .def_readonly("t", &AdamOptimizer::t);
+        .def_readwrite("learning_rate", &AdamOptimizer::learning_rate)
+        .def_readwrite("beta1", &AdamOptimizer::beta1)
+        .def_readwrite("beta2", &AdamOptimizer::beta2)
+        .def_readwrite("epsilon", &AdamOptimizer::epsilon)
+        .def_readwrite("t", &AdamOptimizer::t);
 
     m.def("create_optimizer", &create_optimizer, "Create Adam optimizer",
           py::arg("param_count"),
