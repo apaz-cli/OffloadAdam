@@ -8,7 +8,7 @@ from cpu_adam import CPUAdam, construct_for_parameters
 class SimpleNet(nn.Module):
     def __init__(self):
         super().__init__()
-        self.fc1 = nn.Linear(28 * 28, 512)
+        self.fc1 = nn.Linear(784, 512)
         self.fc2 = nn.Linear(512, 256)
         self.fc3 = nn.Linear(256, 10)
 
@@ -58,7 +58,7 @@ def main():
     labels = np.array(labels, dtype=np.int64)
     
     # Create DataLoader
-    images = torch.from_numpy(images)  # Already flattened 28x28 images
+    images = torch.from_numpy(images)
     labels = torch.from_numpy(labels)
     dataset = torch.utils.data.TensorDataset(images, labels)
     train_loader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=True)
@@ -81,6 +81,7 @@ def main():
     # Train the model
     for epoch in range(1, epochs + 1):
         train(model, train_loader, optimizers, epoch)
+        
 
 if __name__ == '__main__':
     main()
