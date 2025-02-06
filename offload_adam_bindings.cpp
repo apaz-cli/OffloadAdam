@@ -133,15 +133,15 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     
     m.def("serialize", [](AdamOptimizer* optimizer) {
         char* buffer = adam_serialize(optimizer);
-        size_t mv_size = optimizer->param_count * sizeof(float);
-        py::bytes result(buffer, SER_SIZE + (2 * mv_size));
-        free(buffer);  // Clean up C-allocated memory
+        py::bytes result(buffer, SER_SIZE + (optimizer->param_count * sizeof(float)));
+        free(buffer);
         return result;
     }, "Serialize optimizer to bytes");
     
     m.def("deserialize", [](py::bytes data) {
+        // py::bytes stores a null terminator along with the data,
+        // so we use PyBytes_AS_STRING to get the data pointer.
         char* buffer = PyBytes_AS_STRING(data.ptr());
         return adam_deserialize(buffer);
-    }, "Deserialize optimizer from bytes", 
-    py::return_value_policy::take_ownership);
+    }, "Deserialize optimizer from bytes", py::return_value_policy::take_ownership);
 }

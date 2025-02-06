@@ -7,24 +7,29 @@
 // If we need to change the grad or optimizer state dtype, we shall rewrite.
 
 typedef struct {
-    struct _copyable {
-        float beta1;
-        float beta2;
-        float lr;
-        float eps;
-        uint64_t param_count;
-        uint64_t t;
-    };
-    float* volatile m; // 64-byte aligned
-    float* volatile v; // 64-byte aligned
-    void* m_base;      // Original allocated pointer for m
-    void* v_base;      // Original allocated pointer for v
+#define SER_SIZE (4 * sizeof(float) + 2 * sizeof(uint64_t))
+    float beta1;
+    float beta2;
+    float lr;
+    float eps;
+    uint64_t param_count;
+    uint64_t t;
+    void* m_base;      // Pointer to free for m
+    void* v_base;      // Pointer to free for v
+    float* volatile m; // 64-byte aligned first moment
+    float* volatile v; // 64-byte aligned second moment
 } AdamOptimizer;
 
 // Initialize the Adam optimizer
 static AdamOptimizer* adam_init(int param_count, float learning_rate, float beta1, float beta2, float eps) {
+    // Allocate pointer to return
     AdamOptimizer* optimizer = (AdamOptimizer*)malloc(sizeof(AdamOptimizer));
+    if (optimizer == NULL) {
+        fprintf(stderr, "Failed to allocate memory for AdamOptimizer\n");
+        exit(1);
+    }
 
+    // Store args
     optimizer->beta1 = beta1;
     optimizer->beta2 = beta2;
     optimizer->lr = learning_rate;
@@ -48,60 +53,52 @@ static AdamOptimizer* adam_init(int param_count, float learning_rate, float beta
     return optimizer;
 }
 
-// Free the optimizer's memory
 static void adam_free(AdamOptimizer* optimizer) {
     free(optimizer->m_base);
     free(optimizer->v_base);
     free(optimizer);
 }
 
-// Get total size needed for serialization
-static size_t adam_get_serialized_size(const AdamOptimizer* optimizer) {
-    return sizeof(struct _copyable) + 
-           optimizer->param_count * sizeof(float) * 2; // m and v arrays
+static char* adam_serialize(const AdamOptimizer* optimizer) {
+    // Allocate all the memory we need
+    size_t mv_size = optimizer->param_count * sizeof(float);
+    char* buffer = (char*)malloc(SER_SIZE + (2 * mv_size));
+    if (buffer == NULL) {
+        fprintf(stderr, "Failed to allocate memory for serialization\n");
+        exit(1);
+    }
+
+    // Copy everything in
+    memcpy(buffer, optimizer, SER_SIZE);
+    memcpy(buffer + SER_SIZE, optimizer->m, mv_size);
+    memcpy(buffer + SER_SIZE + mv_size, optimizer->v, mv_size);
+    return buffer;
 }
 
-// Serialize optimizer to a pre-allocated buffer
-static void adam_serialize(const AdamOptimizer* optimizer, char* buffer) {
-    size_t copyable_size = sizeof(struct _copyable);
-    size_t array_size = optimizer->param_count * sizeof(float);
-    
-    // Copy just the copyable portion
-    memcpy(buffer, optimizer, copyable_size);
-    
-    // Copy m and v arrays
-    memcpy(buffer + copyable_size, optimizer->m, array_size);
-    memcpy(buffer + copyable_size + array_size, optimizer->v, array_size);
-}
-
-// Deserialize optimizer from a buffer
 static AdamOptimizer* adam_deserialize(const char* buffer) {
+    // Restore the non-pointer members of the optimizer struct
     AdamOptimizer* optimizer = (AdamOptimizer*)malloc(sizeof(AdamOptimizer));
-    size_t copyable_size = sizeof(struct _copyable);
-    
-    // Copy just the copyable portion
-    memcpy(optimizer, buffer, copyable_size);
-    
-    size_t header_size = sizeof(AdamOptimizer);
-    size_t array_size = optimizer->param_count * sizeof(float);
-    size_t aligned_size = array_size + 63;
-    
+    if (optimizer == NULL) {
+        fprintf(stderr, "Failed to allocate memory during deserialization\n");
+        exit(1);
+    }
+    memcpy(optimizer, buffer, SER_SIZE);
+
     // Allocate aligned memory for m and v
+    size_t mv_size = optimizer->param_count * sizeof(float);
+    size_t aligned_size = mv_size + 63;
     optimizer->m_base = malloc(aligned_size);
     optimizer->v_base = malloc(aligned_size);
     if (optimizer->m_base == NULL || optimizer->v_base == NULL) {
         fprintf(stderr, "Failed to allocate memory during deserialization\n");
         exit(1);
     }
-    
-    // Set up aligned pointers
     optimizer->m = (float*)(((uintptr_t)optimizer->m_base + 63) & ~63);
     optimizer->v = (float*)(((uintptr_t)optimizer->v_base + 63) & ~63);
     
-    // Copy the arrays
-    memcpy(optimizer->m, buffer + header_size, array_size);
-    memcpy(optimizer->v, buffer + header_size + array_size, array_size);
-    
+    // Copy the arrays into the newly allocated memory
+    memcpy(optimizer->m, buffer + SER_SIZE, mv_size);
+    memcpy(optimizer->v, buffer + SER_SIZE + mv_size, mv_size);
     return optimizer;
 }
 

@@ -1,42 +1,71 @@
-from typing import Iterable
+from typing import Any, Callable, Iterable, Optional
+
 import torch
+import torch.optim.optimizer
+from torch.optim import Adam
+from torch.optim.optimizer import ParamsT
+
 import offload_adam
 
-class CPUAdam:
-    def __init__(self, opt):
-        self.optimizer = opt
-        self.param = None
-        self.grad = None
-    
-    def step(self, param: torch.Tensor, grad: torch.Tensor):
-        self.param = param
-        self.grad = grad
-        return offload_adam.step(self.optimizer, param, grad)
-    
-    def zero_grad(self, set_to_none = True):
-        if self.grad is not None:
-            if set_to_none:
-                self.grad = None
-            else:
-                self.grad.zero_()
-    
+
+class CPUAdam(torch.optim.Optimizer):
+    """
+    Is not a torch.optim.Optimizer because of param groups.
+    """
+
+    def __init__(
+        self,
+        params: ParamsT,
+        lr: float = 1e-3,
+        betas: tuple[float, float] = (0.9, 0.999),
+        eps=1e-8,
+    ):
+        super().__init__(params, defaults=dict(lr=lr, betas=betas, eps=eps))
+        self.state["optimizers"] = {}
+
+        for param in params:
+            self.state["optimizers"][param] = offload_adam.create_optimizer(param.grad, lr, betas[0], betas[1], eps)
+
+    # TODO: Implement
+    def __setstate__(self, state: dict[str, Any]):
+        pass
+
+    # TODO: Implement
+    def __getstate__(self) -> dict[str, Any]:
+        pass
+
+    def step(self, closure: Optional[Callable[[], float]] = None):
+
+        # I'm honestly really not sure why this is part of the API.
+        loss = None
+        if closure is not None:
+            with torch.enable_grad():
+                loss = closure()
+
+        # Step each parameter
+        for group in self.param_groups: 
+            for p in group['params']:
+                self.step_param(p)
+
+        return loss
+                
+    def step_param(self, param: torch.Tensor) -> None:
+        param_opt = self.state["optimizers"].get(id(param))
+        if type(param_opt) is not offload_adam.AdamOptimizer:
+            raise ValueError("Parameter not registered with this optimizer")
+        
+    # NOTE: Not implementing zero_grad, should be handled by superclass, and
+    #       doesn't require modifying optimizer state.
+
     def __del__(self):
-        if hasattr(self, 'optimizer'):
-            offload_adam.destroy_optimizer(self.optimizer)
-            self.optimizer = None
+        """Free the memory held by C++. Otherwise we risk leaking unholy amounts of memory."""
+        for opt in self.state["optimizers"].values():
+            offload_adam.destroy_optimizer(opt)
+        self.state["optimizers"].clear()
 
-
-def construct_for_parameters(params: Iterable[torch.Tensor] | torch.Tensor, lr=1e-3, betas=(0.9, 0.999), eps=1e-8, weight_decay=0, amsgrad=False) -> list[CPUAdam]:
-    beta1, beta2 = betas
-
-    opts: list[CPUAdam] = []
-    params = (params,) if isinstance(params, torch.Tensor) else params
-    for param in params:
-        assert param.grad is not None
-        assert param.grad.device.type == 'cpu'
-
-        off_opt = offload_adam.create_optimizer(param, lr, beta1, beta2, eps, weight_decay, amsgrad)
-        opt = CPUAdam(off_opt)
-        opts.append(opt)
-
-    return opts
+    @classmethod
+    def vector_width(cls) -> int:
+        """
+        Returns 1 if using the naive scalar implementation, 256 for avx2, 512 for avx512.
+        """
+        return offload_adam.vector_width()

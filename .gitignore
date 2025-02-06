@@ -2,10 +2,13 @@
 .env
 .venv/**
 .vscode/**
+__pycache__/**
+
+offload_adam.egg-info/**
 
 build/**
 dist/**
-offload_adam.egg-info/**
+data/**
 
 *.so
 a.out

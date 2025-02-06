@@ -4,7 +4,7 @@
 
 #define PARAM_COUNT 10000000
 
-double test_impl(void step_fn(AdamOptimizer* optimizer, float* volatile params, float* volatile gradients), float** out_params) {
+static double test_impl(void step_fn(AdamOptimizer* optimizer, float* volatile params, float* volatile gradients), float** out_params) {
     float* params = (float*)malloc(PARAM_COUNT * sizeof(float));
     float* gradients = (float*)malloc(PARAM_COUNT * sizeof(float));
     if (params == NULL || gradients == NULL) {
