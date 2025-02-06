@@ -36,6 +36,7 @@ static double test_impl(void step_fn(AdamOptimizer* optimizer, float* volatile p
     double time_taken = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1e9;
 
     adam_free(optimizer);
+    // TODO: free(optimizer); // Move this out of adam_free and change adam_init to take pointer to AdamOptimizer.
     free(gradients);
     
     *out_params = params;

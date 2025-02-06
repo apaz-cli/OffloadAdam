@@ -7,7 +7,7 @@ setup(
         CppExtension(
             'offload_adam',
             ['offload_adam_bindings.cpp'],
-            extra_compile_args=['-lm', '-O3', '-march=native', '-fno-math-errno']
+            extra_compile_args=['-lm', '-O3', '-march=native', '-fno-math-errno', '-fsanitize=address', '-g', '-fno-omit-frame-pointer', '-fsanitize=undefined'],
         ),
     ],
     cmdclass={

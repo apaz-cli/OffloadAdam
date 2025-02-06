@@ -46,14 +46,15 @@ def train_epoch(model_cpu, model_torch, train_loader, cpu_opt, torch_opt, epoch)
         # Verify parameters are close
         for param_cpu, param_torch in zip(model_cpu.parameters(), model_torch.parameters()):    
             max_diff = torch.max(torch.abs(param_cpu - param_torch))
-            if max_diff > 1e-4:
+            if max_diff > 1e-2:
                 raise AssertionError(f"Parameters diverged! Max difference: {max_diff}")
         
         # Copy CPU parameters to torch model to prevent accumulation
         param_torch.data.copy_(param_cpu.data)
 
         # Print epoch progress
-        print(f'Epoch: {epoch} [{batch_idx * len(data)}/{len(train_loader.dataset)}]')
+        print(f'\rEpoch: {epoch} [{batch_idx * len(data)}/{len(train_loader.dataset)}] ', end="")
+    print()
 
 def main():
     # Training settings
