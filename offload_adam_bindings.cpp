@@ -76,13 +76,13 @@ torch::Tensor step(
     return params;
 }
 
-int get_simd_level(void) {
+int vector_width(void) {
 #if defined(__AVX512F__)
     return 512;
 #elif defined(__AVX2__)
     return 256;
 #else
-    return 0;
+    return 1;
 #endif
 }
 
@@ -129,5 +129,5 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
           py::arg("params"),
           py::arg("grads"));
 
-    m.def("simd_level", &get_simd_level, "Get SIMD level (0=Scalar, 256=AVX2, 512=AVX512)");
+    m.def("vector_width", &vector_width, "Get simd vector width (1=Scalar, 256=AVX2, 512=AVX512)");
 }
