@@ -6,6 +6,7 @@ from sklearn.datasets import load_digits
 from sklearn.preprocessing import StandardScaler
 from cpu_adam import CPUAdam
 from torch.optim import Adam
+import math
 
 class SimpleNet(nn.Module):
     def __init__(self):
@@ -40,14 +41,23 @@ def train_epoch(model_cpu, model_torch, train_loader, cpu_opt, torch_opt, epoch)
         loss_torch = F.nll_loss(output_torch, target)
         loss_torch.backward()
         
-        # Step CPU Adam
-        for param in model_cpu.parameters():
-            if param.grad is not None:
-                param.grad = param.grad.cpu()
-                cpu_opt.step(param.cpu(), param.grad)
-        
-        # Step Torch Adam
-        torch_opt.step()
+        # Step both optimizers
+        for param_cpu, param_torch in zip(model_cpu.parameters(), model_torch.parameters()):
+            if param_cpu.grad is not None:
+                # Step CPU Adam
+                param_cpu.grad = param_cpu.grad.cpu()
+                cpu_opt.step(param_cpu.cpu(), param_cpu.grad)
+                
+                # Step Torch Adam
+                torch_opt.step()
+                
+                # Verify parameters are close
+                max_diff = torch.max(torch.abs(param_cpu - param_torch))
+                if max_diff > 1e-5:
+                    raise AssertionError(f"Parameters diverged! Max difference: {max_diff}")
+                
+                # Copy CPU parameters to torch model to prevent accumulation
+                param_torch.data.copy_(param_cpu.data)
         
         if batch_idx % 10 == 0:
             print(f'Epoch: {epoch} [{batch_idx * len(data)}/{len(train_loader.dataset)}]')
