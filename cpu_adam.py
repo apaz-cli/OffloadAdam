@@ -20,11 +20,12 @@ class CPUAdam(torch.optim.Optimizer):
         betas: tuple[float, float] = (0.9, 0.999),
         eps=1e-8,
     ):
+        params = list(params)
         super().__init__(params, defaults=dict(lr=lr, betas=betas, eps=eps))
         self.state["optimizers"] = {}
 
         for param in params:
-            self.state["optimizers"][param] = offload_adam.create_optimizer(param.grad, lr, betas[0], betas[1], eps)
+            self.state["optimizers"][param] = offload_adam.create_optimizer(param, lr, betas[0], betas[1], eps)
 
     # TODO: Implement
     def __setstate__(self, state: dict[str, Any]):
@@ -50,18 +51,20 @@ class CPUAdam(torch.optim.Optimizer):
         return loss
                 
     def step_param(self, param: torch.Tensor) -> None:
-        param_opt = self.state["optimizers"].get(id(param))
+        param_opt = self.state["optimizers"].get(param)
         if type(param_opt) is not offload_adam.AdamOptimizer:
             raise ValueError("Parameter not registered with this optimizer")
         
-    # NOTE: Not implementing zero_grad, should be handled by superclass, and
-    #       doesn't require modifying optimizer state.
+        offload_adam.step(param_opt, param.data, param.grad)
 
     def __del__(self):
         """Free the memory held by C++. Otherwise we risk leaking unholy amounts of memory."""
         for opt in self.state["optimizers"].values():
             offload_adam.destroy_optimizer(opt)
         self.state["optimizers"].clear()
+
+    # NOTE: Not implementing zero_grad, should be handled by superclass, and
+    #       doesn't require modifying optimizer state.
 
     @classmethod
     def vector_width(cls) -> int:
