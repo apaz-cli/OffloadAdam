@@ -8,12 +8,10 @@ AdamOptimizer* create_optimizer(torch::Tensor& grad, float lr, float beta1, floa
     TORCH_CHECK(grad.is_contiguous(), "grads must be contiguous");
     TORCH_CHECK(grad.dtype() == torch::kFloat32, "grads must be float32");
     int64_t param_count = grad.numel();
-    puts("Creating optimizer.");
     return adam_init(param_count, lr, beta1, beta2, epsilon);
 }
 
 void destroy_optimizer(AdamOptimizer* optimizer) {
-    puts("Destroying optimizer.");
     adam_free(optimizer);
 }
 
@@ -130,17 +128,18 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
 
     m.def("vector_width", &vector_width, "Get simd vector width (1=Scalar, 256=AVX2, 512=AVX512)");
     
-    m.def("serialize", [](AdamOptimizer* optimizer) {
+    m.def("__getstate__", [](AdamOptimizer* optimizer) {
         char* buffer = adam_serialize(optimizer);
         py::bytes result(buffer, SER_SIZE + (optimizer->param_count * sizeof(float)));
         free(buffer);
         return result;
     }, "Serialize optimizer to bytes");
     
-    m.def("deserialize", [](py::bytes data) {
+    m.def("__setstate__", [](py::bytes data) {
         // py::bytes stores a null terminator along with the data,
         // so we use PyBytes_AS_STRING to get the data pointer.
         char* buffer = PyBytes_AS_STRING(data.ptr());
         return adam_deserialize(buffer);
     }, "Deserialize optimizer from bytes");
+
 }

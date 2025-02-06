@@ -20,20 +20,25 @@ class CPUAdam(torch.optim.Optimizer):
         betas: tuple[float, float] = (0.9, 0.999),
         eps=1e-8,
     ):
-        params = list(params)
         super().__init__(params, defaults=dict(lr=lr, betas=betas, eps=eps))
-        self.state["optimizers"] = {}
-
-        for param in params:
-            self.state["optimizers"][param] = offload_adam.create_optimizer(param, lr, betas[0], betas[1], eps)
+        for group in self.param_groups:
+            for param in group["params"]:
+                self.state[param] = offload_adam.create_optimizer(
+                    param, lr, betas[0], betas[1], eps
+                )
 
     # TODO: Implement
     def __setstate__(self, state: dict[str, Any]):
-        pass
+        super().__setstate__(state)
 
     # TODO: Implement
     def __getstate__(self) -> dict[str, Any]:
-        pass
+        superstate = super().__getstate__()
+        superstate["cpu_state"] = {}
+        for group in superstate["param_groups"]:
+            for param in group["params"]:
+                superstate["cpu_state"]
+        return superstate
 
     def step(self, closure: Optional[Callable[[], float]] = None):
 
@@ -44,24 +49,23 @@ class CPUAdam(torch.optim.Optimizer):
                 loss = closure()
 
         # Step each parameter
-        for group in self.param_groups: 
-            for p in group['params']:
+        for group in self.param_groups:
+            for p in group["params"]:
                 self.step_param(p)
 
         return loss
-                
+
     def step_param(self, param: torch.Tensor) -> None:
-        param_opt = self.state["optimizers"].get(param)
+        param_opt = self.state.get(param)
         if type(param_opt) is not offload_adam.AdamOptimizer:
             raise ValueError("Parameter not registered with this optimizer")
-        
+
         offload_adam.step(param_opt, param.data, param.grad)
 
     def __del__(self):
         """Free the memory held by C++. Otherwise we risk leaking unholy amounts of memory."""
-        for opt in self.state["optimizers"].values():
+        for opt in self.state.values():
             offload_adam.destroy_optimizer(opt)
-        self.state["optimizers"].clear()
 
     # NOTE: Not implementing zero_grad, should be handled by superclass, and
     #       doesn't require modifying optimizer state.
