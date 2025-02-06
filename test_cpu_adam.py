@@ -4,7 +4,8 @@ import torch.nn.functional as F
 import numpy as np
 from sklearn.datasets import load_digits
 from sklearn.preprocessing import StandardScaler
-from cpu_adam import CPUAdam, construct_for_parameters
+from cpu_adam import CPUAdam
+from torch.optim import Adam
 
 class SimpleNet(nn.Module):
     def __init__(self):
@@ -20,39 +21,49 @@ class SimpleNet(nn.Module):
         x = self.fc3(x)
         return F.log_softmax(x, dim=1)
 
-def train(model, train_loader, optimizers, epoch):
-    model.train()
+def train_epoch(model_cpu, model_torch, train_loader, cpu_opt, torch_opt, epoch):
+    model_cpu.train()
+    model_torch.train()
+    
     for batch_idx, (data, target) in enumerate(train_loader):
-        # Zero all gradients
-        for opt in optimizers:
-            opt.zero_grad()
-            
-        # Forward pass
-        output = model(data)
-        loss = F.nll_loss(output, target)
+        # Zero gradients
+        cpu_opt.zero_grad()
+        torch_opt.zero_grad()
         
-        # Backward pass
-        loss.backward()
+        # Forward pass - CPU Adam
+        output_cpu = model_cpu(data)
+        loss_cpu = F.nll_loss(output_cpu, target)
+        loss_cpu.backward()
         
-        # Step each parameter with its optimizer
-        for param, opt in zip(model.parameters(), optimizers):
+        # Forward pass - Torch Adam
+        output_torch = model_torch(data)
+        loss_torch = F.nll_loss(output_torch, target)
+        loss_torch.backward()
+        
+        # Step CPU Adam
+        for param in model_cpu.parameters():
             if param.grad is not None:
-                param.grad = param.grad.cpu()  # Ensure grad is on CPU
-                opt.step(param.cpu(), param.grad)
+                param.grad = param.grad.cpu()
+                cpu_opt.step(param.cpu(), param.grad)
         
-        if batch_idx % 100 == 0:
-            print(f'Train Epoch: {epoch} [{batch_idx * len(data)}/{len(train_loader.dataset)} '
-                  f'({100. * batch_idx / len(train_loader):.0f}%)]\tLoss: {loss.item():.6f}')
+        # Step Torch Adam
+        torch_opt.step()
+        
+        if batch_idx % 10 == 0:
+            print(f'Epoch: {epoch} [{batch_idx * len(data)}/{len(train_loader.dataset)}]')
+            print(f'CPU Adam Loss: {loss_cpu.item():.6f}')
+            print(f'Torch Adam Loss: {loss_torch.item():.6f}')
 
 def main():
     # Training settings
-    batch_size = 64
+    batch_size = 32
     epochs = 5
+    lr = 0.01
+    betas = (0.9, 0.999)
+    eps = 1e-8
     
     # Load digits dataset
     digits = load_digits()
-    
-    # Scale features to zero mean and unit variance
     scaler = StandardScaler()
     images = scaler.fit_transform(digits.data).astype(np.float32)
     labels = digits.target.astype(np.int64)
@@ -63,24 +74,22 @@ def main():
     dataset = torch.utils.data.TensorDataset(images, labels)
     train_loader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=True)
     
-    # Initialize model
-    model = SimpleNet()
+    # Initialize two identical models
+    model_cpu = SimpleNet()
+    model_torch = SimpleNet()
     
-    # Move model to CPU and create optimizers
-    model = model.cpu()
-    optimizers = construct_for_parameters(
-        params=model.parameters(),
-        lr=0.01,
-        betas=(0.9, 0.999),
-        eps=1e-8
-    )
+    # Copy initial weights to ensure same starting point
+    model_torch.load_state_dict(model_cpu.state_dict())
     
-    # Print SIMD level being used
+    # Create optimizers
+    cpu_opt = CPUAdam(lr=lr, betas=betas, eps=eps)
+    torch_opt = Adam(model_torch.parameters(), lr=lr, betas=betas, eps=eps)
+    
     print(f"Using SIMD level: {CPUAdam.simd_level()}")
     
-    # Train the model
+    # Train both models
     for epoch in range(1, epochs + 1):
-        train(model, train_loader, optimizers, epoch)
+        train_epoch(model_cpu, model_torch, train_loader, cpu_opt, torch_opt, epoch)
         
 
 if __name__ == '__main__':
