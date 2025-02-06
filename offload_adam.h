@@ -57,30 +57,30 @@ static void adam_free(AdamOptimizer* optimizer) {
 
 // Get total size needed for serialization
 static size_t adam_get_serialized_size(const AdamOptimizer* optimizer) {
-    return sizeof(AdamOptimizer) + 
+    return sizeof(struct _copyable) + 
            optimizer->param_count * sizeof(float) * 2; // m and v arrays
 }
 
 // Serialize optimizer to a pre-allocated buffer
 static void adam_serialize(const AdamOptimizer* optimizer, char* buffer) {
-    size_t header_size = sizeof(AdamOptimizer);
+    size_t copyable_size = sizeof(struct _copyable);
     size_t array_size = optimizer->param_count * sizeof(float);
     
-    // Copy the optimizer struct
-    AdamOptimizer tmp = *optimizer;
-    // Clear pointers as they're meaningless when serialized
-    tmp.m_base = tmp.v_base = tmp.m = tmp.v = NULL;
-    memcpy(buffer, &tmp, header_size);
+    // Copy just the copyable portion
+    memcpy(buffer, optimizer, copyable_size);
     
     // Copy m and v arrays
-    memcpy(buffer + header_size, optimizer->m, array_size);
-    memcpy(buffer + header_size + array_size, optimizer->v, array_size);
+    memcpy(buffer + copyable_size, optimizer->m, array_size);
+    memcpy(buffer + copyable_size + array_size, optimizer->v, array_size);
 }
 
 // Deserialize optimizer from a buffer
 static AdamOptimizer* adam_deserialize(const char* buffer) {
     AdamOptimizer* optimizer = (AdamOptimizer*)malloc(sizeof(AdamOptimizer));
-    memcpy(optimizer, buffer, sizeof(AdamOptimizer));
+    size_t copyable_size = sizeof(struct _copyable);
+    
+    // Copy just the copyable portion
+    memcpy(optimizer, buffer, copyable_size);
     
     size_t header_size = sizeof(AdamOptimizer);
     size_t array_size = optimizer->param_count * sizeof(float);
