@@ -1,7 +1,8 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torchvision import datasets, transforms
+import numpy as np
+from mnist import MNIST
 from cpu_adam import CPUAdam, construct_for_parameters
 
 class SimpleNet(nn.Module):
@@ -54,13 +55,19 @@ def main():
     epochs = 5
     
     # Load MNIST dataset
-    transform = transforms.Compose([
-        transforms.ToTensor(),
-        transforms.Normalize((0.1307,), (0.3081,))
-    ])
+    mndata = MNIST('data')
+    mndata.gz = True
+    images, labels = mndata.load_training()
     
-    dataset = datasets.MNIST('data', train=True, download=True, transform=transform)
-    train_loader = torch.utils.data.DataLoader(dataset, batch_size=batch_size)
+    # Convert to numpy arrays and normalize
+    images = np.array(images, dtype=np.float32) / 255.0
+    labels = np.array(labels, dtype=np.int64)
+    
+    # Create DataLoader
+    images = torch.from_numpy(images).view(-1, 1, 28, 28)
+    labels = torch.from_numpy(labels)
+    dataset = torch.utils.data.TensorDataset(images, labels)
+    train_loader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=True)
     
     # Initialize model
     model = SimpleNet()
