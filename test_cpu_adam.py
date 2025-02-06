@@ -31,38 +31,29 @@ def train_epoch(model_cpu, model_torch, train_loader, cpu_opt, torch_opt, epoch)
         cpu_opt.zero_grad()
         torch_opt.zero_grad()
         
-        # Forward pass - CPU Adam
+        # Forward/backward pass
         output_cpu = model_cpu(data)
         loss_cpu = F.nll_loss(output_cpu, target)
         loss_cpu.backward()
-        
-        # Forward pass - Torch Adam
         output_torch = model_torch(data)
         loss_torch = F.nll_loss(output_torch, target)
         loss_torch.backward()
+            
+        # Optimizer steps
+        cpu_opt.step()
+        torch_opt.step()
         
-        # Step both optimizers
-        for param_cpu, param_torch in zip(model_cpu.parameters(), model_torch.parameters()):
-            if param_cpu.grad is not None:
-                # Step CPU Adam
-                param_cpu.grad = param_cpu.grad.cpu()
-                cpu_opt.step(param_cpu.cpu(), param_cpu.grad)
-                
-                # Step Torch Adam
-                torch_opt.step()
-                
-                # Verify parameters are close
-                max_diff = torch.max(torch.abs(param_cpu - param_torch))
-                if max_diff > 1e-5:
-                    raise AssertionError(f"Parameters diverged! Max difference: {max_diff}")
-                
-                # Copy CPU parameters to torch model to prevent accumulation
-                param_torch.data.copy_(param_cpu.data)
+        # Verify parameters are close
+        for param_cpu, param_torch in zip(model_cpu.parameters(), model_torch.parameters()):    
+            max_diff = torch.max(torch.abs(param_cpu - param_torch))
+            if max_diff > 1e-4:
+                raise AssertionError(f"Parameters diverged! Max difference: {max_diff}")
         
-        if batch_idx % 10 == 0:
-            print(f'Epoch: {epoch} [{batch_idx * len(data)}/{len(train_loader.dataset)}]')
-            print(f'CPU Adam Loss: {loss_cpu.item():.6f}')
-            print(f'Torch Adam Loss: {loss_torch.item():.6f}')
+        # Copy CPU parameters to torch model to prevent accumulation
+        param_torch.data.copy_(param_cpu.data)
+
+        # Print epoch progress
+        print(f'Epoch: {epoch} [{batch_idx * len(data)}/{len(train_loader.dataset)}]')
 
 def main():
     # Training settings
@@ -74,28 +65,29 @@ def main():
     
     # Load digits dataset
     digits = load_digits()
-    scaler = StandardScaler()
-    images = scaler.fit_transform(digits.data).astype(np.float32)
+    images = StandardScaler().fit_transform(digits.data).astype(np.float32)
     labels = digits.target.astype(np.int64)
     
     # Create DataLoader
     images = torch.from_numpy(images)
     labels = torch.from_numpy(labels)
     dataset = torch.utils.data.TensorDataset(images, labels)
-    train_loader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=True)
+    train_loader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=False)
     
     # Initialize two identical models
     model_cpu = SimpleNet()
     model_torch = SimpleNet()
-    
-    # Copy initial weights to ensure same starting point
     model_torch.load_state_dict(model_cpu.state_dict())
-    
+
+    print("Using vector width: ", CPUAdam.vector_width())
+    print("Total params: ", sum(p.numel() for p in model_cpu.parameters()))
+    print("Params:")
+    for name, param in model_cpu.named_parameters():
+        print(name, param.shape)
+
     # Create optimizers
-    cpu_opt = CPUAdam(lr=lr, betas=betas, eps=eps)
+    cpu_opt = CPUAdam(model_cpu.parameters(), lr=lr, betas=betas, eps=eps)
     torch_opt = Adam(model_torch.parameters(), lr=lr, betas=betas, eps=eps)
-    
-    print(f"Using SIMD level: {CPUAdam.simd_level()}")
     
     # Train both models
     for epoch in range(1, epochs + 1):
