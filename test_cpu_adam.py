@@ -2,15 +2,16 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
-from mnist import MNIST
+from sklearn.datasets import load_digits
+from sklearn.preprocessing import StandardScaler
 from cpu_adam import CPUAdam, construct_for_parameters
 
 class SimpleNet(nn.Module):
     def __init__(self):
         super().__init__()
-        self.fc1 = nn.Linear(784, 512)
-        self.fc2 = nn.Linear(512, 256)
-        self.fc3 = nn.Linear(256, 10)
+        self.fc1 = nn.Linear(64, 128)
+        self.fc2 = nn.Linear(128, 64)
+        self.fc3 = nn.Linear(64, 10)
 
     def forward(self, x):
         x = torch.flatten(x, 1)  # flatten all dimensions except batch
@@ -48,14 +49,13 @@ def main():
     batch_size = 64
     epochs = 5
     
-    # Load MNIST dataset
-    mndata = MNIST('data')
-    mndata.gz = True
-    images, labels = mndata.load_training()
+    # Load digits dataset
+    digits = load_digits()
     
-    # Convert to numpy arrays and normalize
-    images = np.array(images, dtype=np.float32) / 255.0
-    labels = np.array(labels, dtype=np.int64)
+    # Scale features to zero mean and unit variance
+    scaler = StandardScaler()
+    images = scaler.fit_transform(digits.data).astype(np.float32)
+    labels = digits.target.astype(np.int64)
     
     # Create DataLoader
     images = torch.from_numpy(images)
