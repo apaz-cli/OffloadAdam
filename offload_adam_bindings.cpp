@@ -100,8 +100,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
           py::arg("lr") = 0.001f,
           py::arg("beta1") = 0.9f,
           py::arg("beta2") = 0.999f,
-          py::arg("epsilon") = 1e-8f,
-          py::return_value_policy::take_ownership);
+          py::arg("epsilon") = 1e-8f);
           
     m.def("destroy_optimizer", &destroy_optimizer, "Free Adam optimizer memory");
     
@@ -143,5 +142,5 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
         // so we use PyBytes_AS_STRING to get the data pointer.
         char* buffer = PyBytes_AS_STRING(data.ptr());
         return adam_deserialize(buffer);
-    }, "Deserialize optimizer from bytes", py::return_value_policy::take_ownership);
+    }, "Deserialize optimizer from bytes");
 }
