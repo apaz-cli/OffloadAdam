@@ -53,6 +53,56 @@ static void adam_free(AdamOptimizer* optimizer) {
     free(optimizer);
 }
 
+// Get total size needed for serialization
+static size_t adam_get_serialized_size(const AdamOptimizer* optimizer) {
+    return sizeof(AdamOptimizer) + 
+           optimizer->param_count * sizeof(float) * 2; // m and v arrays
+}
+
+// Serialize optimizer to a pre-allocated buffer
+static void adam_serialize(const AdamOptimizer* optimizer, char* buffer) {
+    size_t header_size = sizeof(AdamOptimizer);
+    size_t array_size = optimizer->param_count * sizeof(float);
+    
+    // Copy the optimizer struct
+    AdamOptimizer tmp = *optimizer;
+    // Clear pointers as they're meaningless when serialized
+    tmp.m_base = tmp.v_base = tmp.m = tmp.v = NULL;
+    memcpy(buffer, &tmp, header_size);
+    
+    // Copy m and v arrays
+    memcpy(buffer + header_size, optimizer->m, array_size);
+    memcpy(buffer + header_size + array_size, optimizer->v, array_size);
+}
+
+// Deserialize optimizer from a buffer
+static AdamOptimizer* adam_deserialize(const char* buffer) {
+    AdamOptimizer* optimizer = (AdamOptimizer*)malloc(sizeof(AdamOptimizer));
+    memcpy(optimizer, buffer, sizeof(AdamOptimizer));
+    
+    size_t header_size = sizeof(AdamOptimizer);
+    size_t array_size = optimizer->param_count * sizeof(float);
+    size_t aligned_size = array_size + 63;
+    
+    // Allocate aligned memory for m and v
+    optimizer->m_base = malloc(aligned_size);
+    optimizer->v_base = malloc(aligned_size);
+    if (optimizer->m_base == NULL || optimizer->v_base == NULL) {
+        fprintf(stderr, "Failed to allocate memory during deserialization\n");
+        exit(1);
+    }
+    
+    // Set up aligned pointers
+    optimizer->m = (float*)(((uintptr_t)optimizer->m_base + 63) & ~63);
+    optimizer->v = (float*)(((uintptr_t)optimizer->v_base + 63) & ~63);
+    
+    // Copy the arrays
+    memcpy(optimizer->m, buffer + header_size, array_size);
+    memcpy(optimizer->v, buffer + header_size + array_size, array_size);
+    
+    return optimizer;
+}
+
 static void adam_step_naive(AdamOptimizer* optimizer, float* volatile params, float* volatile gradients) {
     optimizer->t += 1;
     float beta1 = powf(optimizer->beta1, optimizer->t);
