@@ -7,16 +7,18 @@
 // If we need to change the grad or optimizer state dtype, we shall rewrite.
 
 typedef struct {
+    struct _copyable {
+        float beta1;
+        float beta2;
+        float lr;
+        float eps;
+        uint64_t param_count;
+        uint64_t t;
+    };
     float* volatile m; // 64-byte aligned
     float* volatile v; // 64-byte aligned
     void* m_base;      // Original allocated pointer for m
     void* v_base;      // Original allocated pointer for v
-    float beta1;
-    float beta2;
-    float lr;
-    float eps;
-    uint64_t param_count;
-    uint64_t t;
 } AdamOptimizer;
 
 // Initialize the Adam optimizer
