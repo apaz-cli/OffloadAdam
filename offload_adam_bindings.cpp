@@ -132,11 +132,11 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     m.def("vector_width", &vector_width, "Get simd vector width (1=Scalar, 256=AVX2, 512=AVX512)");
     
     m.def("serialize", [](AdamOptimizer* optimizer) {
-        size_t size = adam_get_serialized_size(optimizer);
-        py::bytes buffer(nullptr, size);
-        char* ptr = PyBytes_AS_STRING(buffer.ptr());
-        adam_serialize(optimizer, ptr);
-        return buffer;
+        char* buffer = adam_serialize(optimizer);
+        size_t mv_size = optimizer->param_count * sizeof(float);
+        py::bytes result(buffer, SER_SIZE + (2 * mv_size));
+        free(buffer);  // Clean up C-allocated memory
+        return result;
     }, "Serialize optimizer to bytes");
     
     m.def("deserialize", [](py::bytes data) {
