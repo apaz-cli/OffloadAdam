@@ -5,10 +5,14 @@
 // Also install torch and numpy
 
 AdamOptimizer* create_optimizer(torch::Tensor& grad, float lr, float beta1, float beta2, float epsilon) {
+    TORCH_CHECK(grad.defined(), "grad tensor must not be null");
     TORCH_CHECK(grad.is_contiguous(), "grads must be contiguous");
     TORCH_CHECK(grad.dtype() == torch::kFloat32, "grads must be float32");
+    TORCH_CHECK(grad.numel() > 0, "grad tensor must not be empty");
     int64_t param_count = grad.numel();
-    return adam_init(param_count, lr, beta1, beta2, epsilon);
+    AdamOptimizer* opt = adam_init(param_count, lr, beta1, beta2, epsilon);
+    TORCH_CHECK(opt != nullptr, "Failed to allocate optimizer");
+    return opt;
 }
 
 void destroy_optimizer(AdamOptimizer* optimizer) {
@@ -129,17 +133,22 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     m.def("vector_width", &vector_width, "Get simd vector width (1=Scalar, 256=AVX2, 512=AVX512)");
     
     m.def("serialize", [](AdamOptimizer* optimizer) {
+        TORCH_CHECK(optimizer != nullptr, "optimizer must not be null");
         char* buffer = adam_serialize(optimizer);
-        py::bytes result(buffer, SER_SIZE + (optimizer->param_count * sizeof(float)));
+        TORCH_CHECK(buffer != nullptr, "Failed to allocate serialization buffer");
+        size_t size = SER_SIZE + (optimizer->param_count * sizeof(float));
+        py::bytes result(buffer, size);
         free(buffer);
         return result;
     }, "Serialize optimizer to bytes");
     
     m.def("deserialize", [](py::bytes data) {
-        // py::bytes stores a null terminator along with the data,
-        // so we use PyBytes_AS_STRING to get the data pointer.
+        TORCH_CHECK(data.ptr() != nullptr, "data must not be null");
         char* buffer = PyBytes_AS_STRING(data.ptr());
-        return adam_deserialize(buffer);
+        TORCH_CHECK(buffer != nullptr, "Failed to get data pointer");
+        AdamOptimizer* opt = adam_deserialize(buffer);
+        TORCH_CHECK(opt != nullptr, "Failed to deserialize optimizer");
+        return opt;
     }, "Deserialize optimizer from bytes");
 
 }
