@@ -128,17 +128,18 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
 
     m.def("vector_width", &vector_width, "Get simd vector width (1=Scalar, 256=AVX2, 512=AVX512)");
     
-    m.def("__getstate__", [](AdamOptimizer* optimizer) {
+    m.def("serialize", [](AdamOptimizer* optimizer) {
         char* buffer = adam_serialize(optimizer);
-        py::bytes state(buffer, SER_SIZE + (optimizer->param_count * sizeof(float)));
+        py::bytes result(buffer, SER_SIZE + (optimizer->param_count * sizeof(float)));
         free(buffer);
-        return py::dict("state"_a=state);
-    }, "Serialize optimizer to dict");
+        return result;
+    }, "Serialize optimizer to bytes");
     
-    m.def("__setstate__", [](py::dict state) {
-        py::bytes data = state["state"].cast<py::bytes>();
+    m.def("deserialize", [](py::bytes data) {
+        // py::bytes stores a null terminator along with the data,
+        // so we use PyBytes_AS_STRING to get the data pointer.
         char* buffer = PyBytes_AS_STRING(data.ptr());
         return adam_deserialize(buffer);
-    }, "Deserialize optimizer from dict");
+    }, "Deserialize optimizer from bytes");
 
 }
