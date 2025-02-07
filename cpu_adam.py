@@ -61,6 +61,7 @@ class CPUAdam(torch.optim.Optimizer):
             [setattr(opt, k, v) for k, v in self.defaults.items() if k in opt.__dir__()]
 
     def state_dict(self) -> StateDict:
+        """Serialize with torch.save()."""
         state = super().state_dict()
 
         # Convert optimizer state bindings to bytes objects
