@@ -38,7 +38,6 @@ torch::Tensor step_naive(
     return params;
 }
 
-
 #if defined(__AVX512F__)
 torch::Tensor step_avx512(
     AdamOptimizer* optimizer,
@@ -133,9 +132,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     m.def("vector_width", &vector_width, "Get simd vector width (1=Scalar, 256=AVX2, 512=AVX512)");
     
     m.def("serialize", [](AdamOptimizer* optimizer) {
-        TORCH_CHECK(optimizer != nullptr, "optimizer must not be null");
         char* buffer = adam_serialize(optimizer);
-        TORCH_CHECK(buffer != nullptr, "Failed to allocate serialization buffer");
         size_t size = SER_SIZE + (optimizer->param_count * sizeof(float));
         py::bytes result(buffer, size);
         free(buffer);
@@ -143,11 +140,8 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     }, "Serialize optimizer to bytes");
     
     m.def("deserialize", [](py::bytes data) {
-        TORCH_CHECK(data.ptr() != nullptr, "data must not be null");
         char* buffer = PyBytes_AS_STRING(data.ptr());
-        TORCH_CHECK(buffer != nullptr, "Failed to get data pointer");
         AdamOptimizer* opt = adam_deserialize(buffer);
-        TORCH_CHECK(opt != nullptr, "Failed to deserialize optimizer");
         return opt;
     }, "Deserialize optimizer from bytes");
 

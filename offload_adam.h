@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <math.h>
 #include <time.h>
+#include <string.h>
 
 // If we need to change the grad or optimizer state dtype, we shall rewrite.
 
@@ -56,7 +57,6 @@ static AdamOptimizer* adam_init(int param_count, float learning_rate, float beta
 static void adam_free(AdamOptimizer* optimizer) {
     free(optimizer->m_base);
     free(optimizer->v_base);
-    free(optimizer);
 }
 
 static char* adam_serialize(const AdamOptimizer* optimizer) {
