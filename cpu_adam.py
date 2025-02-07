@@ -10,7 +10,9 @@ import offload_adam
 
 class CPUAdam(torch.optim.Optimizer):
     """
-    A CPU-optimized implementation of the Adam optimizer. Should work like any other optimizer in PyTorch.
+    A CPU-optimized implementation of the Adam optimizer.
+
+    When 
     """
 
     def __init__(
@@ -19,18 +21,25 @@ class CPUAdam(torch.optim.Optimizer):
         lr: float = 1e-3,
         betas: tuple[float, float] = (0.9, 0.999),
         eps=1e-8,
+        pipeline_hook: Callable | None = None,
     ):
         super().__init__(
-            params, defaults=dict(lr=lr, beta1=betas[0], beta2=betas[1], eps=eps)
+            params, defaults=dict(lr=lr, beta1=betas[0], beta2=betas[1], eps=eps, pipeline_hook=pipeline_hook)
         )
+
         for group in self.param_groups:
             for param in group["params"]:
                 self.state[param] = offload_adam.create_optimizer(
                     param, lr, betas[0], betas[1], eps
                 )
+                if pipeline_hook:
+                    param.register_post_accumulate_grad_hook(pipeline_hook)
 
     def step(self) -> None:
         """Perform an optimizer step on all parameters."""
+        if self.defaults["pipeline_hook"] is not None:
+            return
+
         for group in self.param_groups:
             for p in group["params"]:
                 self.step_param(p)

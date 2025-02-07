@@ -7,6 +7,10 @@
 
 // If we need to change the grad or optimizer state dtype, we shall rewrite.
 
+#if __cplusplus
+#define restrict __restrict__
+#endif
+
 typedef struct {
 #define SER_SIZE (4 * sizeof(float) + 2 * sizeof(uint64_t))
     float beta1;
@@ -17,8 +21,8 @@ typedef struct {
     uint64_t t;
     void* m_base;      // Pointer to free for m
     void* v_base;      // Pointer to free for v
-    float* volatile m; // 64-byte aligned first moment
-    float* volatile v; // 64-byte aligned second moment
+    float* restrict m; // 64-byte aligned first moment
+    float* restrict v; // 64-byte aligned second moment
 } AdamOptimizer;
 
 // Initialize the Adam optimizer
@@ -102,7 +106,7 @@ static AdamOptimizer* adam_deserialize(const char* buffer) {
     return optimizer;
 }
 
-static void adam_step_naive(AdamOptimizer* optimizer, float* volatile params, float* volatile gradients) {
+static void adam_step_naive(AdamOptimizer* optimizer, float* restrict params, float* restrict gradients) {
     optimizer->t += 1;
     float beta1 = powf(optimizer->beta1, optimizer->t);
     float beta2 = powf(optimizer->beta2, optimizer->t);
@@ -110,6 +114,8 @@ static void adam_step_naive(AdamOptimizer* optimizer, float* volatile params, fl
     float one_minus_beta2 = 1.0f - optimizer->beta2;
     float one_minus_beta1_t = 1.0f - beta1;
     float one_minus_beta2_t = 1.0f - beta2;
+    float inv_one_minus_beta1_t = 1.0f / one_minus_beta1_t;
+    float inv_one_minus_beta2_t = 1.0f / one_minus_beta2_t;
     
     for(uint64_t i = 0; i < optimizer->param_count; i++) {
         float grad = gradients[i];
@@ -119,15 +125,15 @@ static void adam_step_naive(AdamOptimizer* optimizer, float* volatile params, fl
         float m = optimizer->m[i] = optimizer->beta1 * m_ + one_minus_beta1 * grad;
         float v = optimizer->v[i] = optimizer->beta2 * v_ + one_minus_beta2 * grad * grad;
 
-        float m_hat = m / one_minus_beta1_t;
-        float v_hat = v / one_minus_beta2_t;
+        float m_hat = m * inv_one_minus_beta1_t;
+        float v_hat = v * inv_one_minus_beta2_t;
         params[i] -= optimizer->lr * m_hat / (sqrtf(v_hat) + optimizer->eps);
     }
 }
 
 #if defined(__AVX2__)
 #include <immintrin.h>
-static void adam_step_avx256(AdamOptimizer* optimizer, float* volatile params, float* volatile gradients) {
+static void adam_step_avx256(AdamOptimizer* optimizer, float* restrict params, float* restrict gradients) {
     optimizer->t += 1;
     float beta1 = powf(optimizer->beta1, optimizer->t);
     float beta2 = powf(optimizer->beta2, optimizer->t);
@@ -135,6 +141,8 @@ static void adam_step_avx256(AdamOptimizer* optimizer, float* volatile params, f
     float one_minus_beta2 = 1.0f - optimizer->beta2;
     float one_minus_beta1_t = 1.0f - beta1;
     float one_minus_beta2_t = 1.0f - beta2;
+    float inv_one_minus_beta1_t = 1.0f / one_minus_beta1_t;
+    float inv_one_minus_beta2_t = 1.0f / one_minus_beta2_t;
     
     // Process 8 elements at a time using AVX2
     uint64_t i;
@@ -144,6 +152,8 @@ static void adam_step_avx256(AdamOptimizer* optimizer, float* volatile params, f
     __m256 one_minus_beta2_vec = _mm256_set1_ps(one_minus_beta2);
     __m256 one_minus_beta1_t_vec = _mm256_set1_ps(one_minus_beta1_t);
     __m256 one_minus_beta2_t_vec = _mm256_set1_ps(one_minus_beta2_t);
+    __m256 inv_one_minus_beta1_t_vec = _mm256_set1_ps(inv_one_minus_beta1_t);
+    __m256 inv_one_minus_beta2_t_vec = _mm256_set1_ps(inv_one_minus_beta2_t);
     __m256 lr_vec = _mm256_set1_ps(optimizer->lr);
     __m256 eps_vec = _mm256_set1_ps(optimizer->eps);
 
@@ -168,10 +178,10 @@ static void adam_step_avx256(AdamOptimizer* optimizer, float* volatile params, f
         _mm256_store_ps(&optimizer->v[i], v_vec);
 
         // Calculate m_hat = m / (1-beta1^t)
-        __m256 m_hat = _mm256_div_ps(m_vec, one_minus_beta1_t_vec);
+        __m256 m_hat = _mm256_mul_ps(m_vec, inv_one_minus_beta1_t_vec);
 
         // Calculate v_hat = v / (1-beta2^t)
-        __m256 v_hat = _mm256_div_ps(v_vec, one_minus_beta2_t_vec);
+        __m256 v_hat = _mm256_mul_ps(v_vec, inv_one_minus_beta2_t_vec);
 
         // Calculate sqrt(v_hat) + eps
         __m256 denom = _mm256_add_ps(_mm256_sqrt_ps(v_hat), eps_vec);
@@ -196,8 +206,8 @@ static void adam_step_avx256(AdamOptimizer* optimizer, float* volatile params, f
         float m = optimizer->m[i] = optimizer->beta1 * m_ + one_minus_beta1 * grad;
         float v = optimizer->v[i] = optimizer->beta2 * v_ + one_minus_beta2 * grad * grad;
 
-        float m_hat = m / one_minus_beta1_t;
-        float v_hat = v / one_minus_beta2_t;
+        float m_hat = m * inv_one_minus_beta1_t;
+        float v_hat = v * inv_one_minus_beta2_t;
         params[i] -= optimizer->lr * m_hat / (sqrtf(v_hat) + optimizer->eps);
     }
 }
@@ -205,7 +215,7 @@ static void adam_step_avx256(AdamOptimizer* optimizer, float* volatile params, f
 
 #if defined(__AVX512F__)
 #include <immintrin.h>
-static void adam_step_avx512(AdamOptimizer* optimizer, float* volatile params, float* volatile gradients) {
+static void adam_step_avx512(AdamOptimizer* optimizer, float* restrict params, float* restrict gradients) {
     optimizer->t += 1;
     float beta1 = powf(optimizer->beta1, optimizer->t);
     float beta2 = powf(optimizer->beta2, optimizer->t);
@@ -213,6 +223,8 @@ static void adam_step_avx512(AdamOptimizer* optimizer, float* volatile params, f
     float one_minus_beta2 = 1.0f - optimizer->beta2;
     float one_minus_beta1_t = 1.0f - beta1;
     float one_minus_beta2_t = 1.0f - beta2;
+    float inv_one_minus_beta1_t = 1.0f / one_minus_beta1_t;
+    float inv_one_minus_beta2_t = 1.0f / one_minus_beta2_t;
     
     // Process 16 elements at a time using AVX-512
     uint64_t i;
@@ -222,6 +234,8 @@ static void adam_step_avx512(AdamOptimizer* optimizer, float* volatile params, f
     __m512 one_minus_beta2_vec = _mm512_set1_ps(one_minus_beta2);
     __m512 one_minus_beta1_t_vec = _mm512_set1_ps(one_minus_beta1_t);
     __m512 one_minus_beta2_t_vec = _mm512_set1_ps(one_minus_beta2_t);
+    __m512 inv_one_minus_beta1_t_vec = _mm512_set1_ps(inv_one_minus_beta1_t);
+    __m512 inv_one_minus_beta2_t_vec = _mm512_set1_ps(inv_one_minus_beta2_t);
     __m512 lr_vec = _mm512_set1_ps(optimizer->lr);
     __m512 eps_vec = _mm512_set1_ps(optimizer->eps);
 
@@ -246,10 +260,10 @@ static void adam_step_avx512(AdamOptimizer* optimizer, float* volatile params, f
         _mm512_store_ps(&optimizer->v[i], v_vec);
 
         // Calculate m_hat = m / (1-beta1^t)
-        __m512 m_hat = _mm512_div_ps(m_vec, one_minus_beta1_t_vec);
+        __m512 m_hat = _mm512_mul_ps(m_vec, inv_one_minus_beta1_t_vec);
 
-        // Calculate v_hat = v / (1-beta2^t)
-        __m512 v_hat = _mm512_div_ps(v_vec, one_minus_beta2_t_vec);
+        // Calculate v_hat = v * inv_one_minus_beta2_t
+        __m512 v_hat = _mm512_mul_ps(v_vec, inv_one_minus_beta2_t_vec);
 
         // Calculate sqrt(v_hat) + eps
         __m512 denom = _mm512_add_ps(_mm512_sqrt_ps(v_hat), eps_vec);
@@ -274,8 +288,8 @@ static void adam_step_avx512(AdamOptimizer* optimizer, float* volatile params, f
         float m = optimizer->m[i] = optimizer->beta1 * m_ + one_minus_beta1 * grad;
         float v = optimizer->v[i] = optimizer->beta2 * v_ + one_minus_beta2 * grad * grad;
 
-        float m_hat = m / one_minus_beta1_t;
-        float v_hat = v / one_minus_beta2_t;
+        float m_hat = m * inv_one_minus_beta1_t;
+        float v_hat = v * inv_one_minus_beta2_t;
         params[i] -= optimizer->lr * m_hat / (sqrtf(v_hat) + optimizer->eps);
     }
 }

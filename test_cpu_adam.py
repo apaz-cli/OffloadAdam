@@ -56,18 +56,14 @@ def main():
     print()
 
     # Create optimizers
-    cpu_opt = CPUAdam(model_cpu.parameters(), lr=lr, betas=betas, eps=eps)
+    def pipeline_hook(param):
+        cpu_opt.step_param(param)
+    cpu_opt = CPUAdam(model_cpu.parameters(), lr=lr, betas=betas, eps=eps, pipeline_hook=pipeline_hook)
     torch_opt = Adam(model_torch.parameters(), lr=lr, betas=betas, eps=eps)
     
     # Train both models
     max_diff = 0
     for epoch in range(1, epochs + 1):
-        if epoch % 10 == 0:
-            # Serialize and deserialize CPUAdam
-            # Test serialization
-            torch.save(cpu_opt.state_dict(), "/tmp/cpu_opt.pth")
-            cpu_opt.load_state_dict(torch.load("/tmp/cpu_opt.pth", weights_only=False))
-
         sample_number = 0
         for data, target in train_loader:
             sample_number += len(data)
@@ -83,7 +79,7 @@ def main():
             loss_torch = F.nll_loss(output_torch, target)
             loss_torch.backward()
                 
-            # Optimizer steps
+            # Optimizer steps (The cpu step is done in the backwards hook)
             cpu_opt.step()
             torch_opt.step()
             
@@ -103,6 +99,9 @@ def main():
         print()
     print()
     print("Max diff:", max_diff)
+
+    torch.save(model_cpu.state_dict(), "cpu_model.pth")
+    model_cpu_state_dict = torch.load("cpu_model.pth")
 
 if __name__ == '__main__':
     main()
